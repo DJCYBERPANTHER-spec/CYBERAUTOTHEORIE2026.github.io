@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Autotheorie Final Pro</title>
+<style>
+:root{--bg:#0f1724;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,Arial;background:linear-gradient(180deg,#071028 0%,#071a2a 100%);color:#e6eef6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.app{width:100%;max-width:1100px;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));border-radius:14px;padding:18px;box-shadow:0 10px 30px rgba(2,6,23,0.6)}
+header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px}h1{font-size:20px;margin:0}.controls{display:flex;gap:8px;align-items:center}select,button{padding:8px 12px;border-radius:8px;border:none;background:rgba(255,255,255,0.03);color:inherit}.content{display:grid;grid-template-columns:1fr 360px;gap:16px}@media(max-width:1000px){.content{grid-template-columns:1fr}}.card{background:rgba(255,255,255,0.02);padding:14px;border-radius:12px}.question{font-size:18px;margin-bottom:10px}.options{display:flex;flex-direction:column;gap:8px}.option{padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);cursor:pointer;text-align:left;background:transparent;color:inherit}.option.correct{background:rgba(16,185,129,0.12);border-color:rgba(16,185,129,0.25)}.option.incorrect{background:rgba(239,68,68,0.08);border-color:rgba(239,68,68,0.2)}.meta{display:flex;align-items:center;justify-content:space-between;margin-top:12px;color:var(--muted);font-size:14px}.sidebar{display:flex;flex-direction:column;gap:12px}.progress{height:12px;background:rgba(255,255,255,0.03);border-radius:8px;overflow:hidden}.progress>div{height:100%;width:0;background:linear-gradient(90deg,var(--accent),#60a5fa)}.qgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(36px,1fr));gap:6px}.qcell{padding:8px;border-radius:8px;text-align:center;background:rgba(255,255,255,0.02);cursor:pointer}.qcell.current{box-shadow:0 0 0 2px rgba(6,182,212,0.12);border:1px solid rgba(6,182,212,0.18)}.footer{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}.small{font-size:13px;color:var(--muted)}.explain{margin-top:10px;padding:10px;border-radius:8px;background:rgba(255,255,255,0.015);font-size:14px;color:var(--muted)}.resultCard{margin-top:12px;padding:12px;border-radius:10px;background:rgba(255,255,255,0.02)}.histItem{font-size:13px;margin-bottom:6px;color:var(--muted)}.histControls{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+<div><h1>Autotheorie Final Pro <span class="small">(DE)</span></h1><div class="small">30 Fragen pro Land • adaptive Prüfung • PDF-Export</div></div>
+<div class="controls">
+<label class="small" for="country">Land:</label>
+<select id="country"><option value="US">USA</option><option value="SE">Schweden</option><option value="CH">Schweiz</option></select>
+<label class="small" for="count">Fragen:</label>
+<select id="count"><option>5</option><option>10</option><option>20</option><option selected>30</option></select>
+<button id="startBtn">Start</button>
+</div>
+</header>
+
+<main class="content">
+<section class="card main">
+<div id="quizArea" hidden>
+<div class="question" id="questionText"></div>
+<div class="options" id="options"></div>
+<div class="meta"><div id="qnum">Frage 0 / 0</div><div class="small">Punkte: <span id="score">0</span></div></div>
+<div class="explain" id="explain" hidden></div>
+<div class="footer"><button id="prevBtn">Zurück</button><button id="nextBtn">Weiter</button><button id="finishBtn">Beenden</button></div>
+<div id="resultCard" class="resultCard" hidden></div>
+</div>
+<div id="startPanel"><p>Drücke <strong>Start</strong>, um die Prüfung zu beginnen. Fragen sind auf Deutsch.</p><div class="small">Erklärung erscheint erst nach Antwort.</div></div>
+</section>
+
+<aside class="sidebar">
+<div class="card"><div class="small">Fortschritt</div><div class="progress" aria-hidden="true"><div id="progBar"></div></div><div class="meta"><div id="correctCount">Richtig: 0</div><div id="wrongCount">Falsch: 0</div></div></div>
+<div class="card"><div class="small">Fragenübersicht</div><div class="qgrid" id="qgrid"></div></div>
+<div class="card small" id="historyCard"><div><strong>Ergebnisse (Historie)</strong></div><div id="historyList" style="margin-top:8px"></div><div class="histControls"><div class="small" id="statSummary">Gesamtstatistik:</div><div style="display:flex;gap:8px"><button id="exportPdfBtn">PDF export</button><button id="clearHistBtn">Löschen</button></div></div></div>
+</aside>
+</main>
+</div>
+
+<script>
+// Full question banks (30 per country)
+const BANKS = {
+US: [
+{q:'Du nähst dich einem Stoppschild an einer Kreuzung ohne Sicht auf die Gegenfahrbahn. Was ist richtig?', opts:['Nur langsamer fahren','Vollständig anhalten, dann vorsichtig weiterfahren','Hupen und weiterfahren','Nur blinken'], a:1, explain:'Stoppschild = vollständig anhalten, dann freie Sicht und weiterfahren.', level:1},
+{q:'Bei einer gelben Ampel: Wie solltest du reagieren?', opts:['Beschleunigen um vor Rot durchzufahren','Anhalten, wenn es sicher möglich ist','Sofort anhalten, egal was passiert','Langsam durchrollen ohne zu schauen'], a:1, explain:'Gelb warnt vor Rot; abbremsen, anhalten wenn nötig.', level:1},
+{q:'Ein Schulbus hält und schaltet Warnblinker ein; Kinder steigen aus. Was gilt (typisch USA)?', opts:['Weiterfahren wie gewohnt','Anhalten und nicht vorbeifahren','Nur hupen und weiterfahren','Nur wenn Kinder auf der Straße sind anhalten'], a:1, explain:'In vielen US-Staaten muss beim Stopp eines Schulbusses gehalten werden, bis Kinder sicher sind.', level:2},
+{q:'Du fährst bei leichtem Regen und spürst, dass das Lenkrad beginnt zu rutschen (Aquaplaning). Was ist die beste Reaktion?', opts:['Lenkrad festhalten, Gas wegnehmen und nicht stark bremsen','Vollbremsung','Stärker lenken','Motor abwürgen'], a:0, explain:'Nicht stark bremsen, Geschwindigkeit reduzieren, Lenkrad gerade halten.', level:3},
+{q:'Welche Blutalkoholgrenze ist in vielen US-Bundesstaaten für Fahrer über 21 typisch?', opts:['0.02%','0.05%','0.08%','0.10%'], a:2, explain:'Oft gilt 0,08% als gesetzliche Grenze.', level:2},
+{q:'An einer unbeschilderten Kreuzung: Wer hat Vorfahrt?', opts:['Der Schnellere','Der von rechts kommende Verkehrsteilnehmer','Der links Abbiegende','Der größere Wagen'], a:1, explain:'Rechts-vor-Links gilt an unbeschilderten Kreuzungen.', level:1},
+{q:'Beim Rechtsabbiegen bei roter Ampel (wo erlaubt): Was musst du vorher tun?', opts:['Nichts, sofort abbiegen','Vollständig anhalten und Vorfahrt beachten','Nur blinken','Hupen'], a:1, explain:'Bei Rot und erlaubt: zuerst komplett anhalten, dann abbiegen wenn sicher.', level:2},
+{q:'Du siehst ein blaues Rettungsfahrzeug mit Sirene hinter dir. Wie reagierst du?', opts:['Weiterfahren','Platz machen, an den Rand fahren und bei Bedarf anhalten','Hupen','Beschleunigen'], a:1, explain:'Rettungsfahrzeuge haben Vorrang; Platz schaffen und an den Rand fahren.', level:1},
+{q:'Was ist beim Parken an einer Hydrantenzufahrt in der Regel richtig?', opts:['Direkt davor parken','Abstand halten (z. B. ca. 10 m)','Nur kurz halten erlaubt','Hydranten ignorieren'], a:1, explain:'Hydranten müssen freigehalten werden; genaue Distanz variiert, oft ca. 10 m.', level:3},
+{q:'Beim Spurwechsel: Wann musst du blinken?', opts:['Nur wenn Fahrzeuge hinter dir sind','Immer vor dem Spurwechsel','Nur bei Autobahn','Gar nicht'], a:1, explain:'Blinker müssen immer vor Spurwechsel gesetzt werden.', level:1},
+{q:'Du fährst nachts auf einer Landstraße: Wie sollen Scheinwerfer eingestellt sein?', opts:['Fernlicht permanent','Abblendlicht bei Gegenverkehr, sonst Fernlicht falls frei','Nur Standlicht','Nebelscheinwerfer permanent'], a:1, explain:'Fernlicht bei frei Straße, bei Gegenverkehr auf Abblendlicht wechseln.', level:2},
+{q:'Bei einer Panne auf der Autobahn: Was ist die richtige erste Maßnahme?', opts:['Aussteigen und mitten auf der Fahrbahn gehen','Warnblinker einschalten und Fahrzeug sichern','Fahrzeug sofort verlassen und weglaufen','Türen offenlassen'], a:1, explain:'Warnblinker und Fahrzeug sichern; andere Maßnahmen zur Warnung treffen.', level:1},
+{q:'Was ist die richtige Sitzposition?', opts:['Ganz nah an Lenkrad','Bequem, Pedale erreichbar, Rücken gerade','Ganz zurücklehnen','Mit ausgestreckten Beinen'], a:1, explain:'Sitz so, dass Pedale/Lenkrad gut erreichbar sind; Sicherheit geht vor.', level:1},
+{q:'Ein Gegenverkehrsfahrzeug schert auf deine Spur aus. Deine sofortige Reaktion?', opts:['Beschleunigen','Bremsen und ausweichen falls möglich','Hupen nur','Gegenlenken stark'], a:1, explain:'Sicherheit: abbremsen und ausweichen, nicht abrupt gegenlenken.', level:3},
+{q:'Du siehst ein Baustellenschild mit 60 km/h. Was ist zu tun?', opts:['Weiter mit vorheriger Geschwindigkeit','Geschwindigkeit reduzieren und Gefahren beachten','Unverändert fahren','Innenspur benutzen'], a:1, explain:'Tempolimit in Baustelle beachten und vorsichtig fahren.', level:2},
+{q:'Wie verhalten bei Nebel mit schlechter Sicht?', opts:['Geschwindigkeit erhöhen','Abstand vergrößern und ggf. Nebelscheinwerfer/Abblendlicht nutzen','Fenster öffnen','Parken in der Mitte der Straße'], a:1, explain:'Sichtverhältnisse reduzieren, Abstand vergrößern, Licht einschalten.', level:3},
+{q:'Du fährst auf einer mehrspurigen Straße und ein Fahrzeug aus dem toten Winkel wechselt die Spur. Was ist kritisch?', opts:['Aufmerksamkeit auf Spiegel und Schulterblick','Nur auf Spiegel vertrauen','Nie auf Spurwechsel achten','Fahrbahn verlassen'], a:0, explain:'Schulterblick ergänzt Spiegel, um Tote Winkel zu überprüfen.', level:2},
+{q:'Wie verhalten, wenn Ampel defekt ist (ausgeschaltet)?', opts:['Vorfahrt nach Schildern/Polizei beachten, sonst rechts-vor-links','Immer anhalten und warten','Schnell durchfahren','Blinken und weiterfahren'], a:0, explain:'Bei Ausfall gelten Verkehrsregeln/Schilder; häufig Rechts-vor-Links oder Polizeianweisungen.', level:2},
+{q:'Was ist bei Aquaplaning zu vermeiden?', opts:['Lenkrad gerade halten und nicht stark bremsen','Gas geben','Abruptes Gegenlenken','Fenster öffnen'], a:0, explain:'Keine plötzlichen Lenk- oder Bremsmanöver; Geschwindigkeit verringern.', level:3},
+{q:'An einer Einmündung ohne Schild: Du willst rechts abbiegen, es kommt von links ein Auto. Wer hat Vorrang?', opts:['Du','Der von links','Der von rechts','Der größere Wagen'], a:2, explain:'Rechts-vor-Links: der von rechts hat Vorrang, wenn unbeschildert.', level:1},
+{q:'Du nähst dich einem Bahnübergang mit blinkenden Lampen. Wie verhalten?', opts:['Beschleunigen, um schnell überzufahren','Anhalten und Warten bis Lampen aus sind und Schranken offen','Nur vorsichtig rüberschauen','Hupen, um Lokführer zu warnen'], a:1, explain:'Blinkende Lampen bedeuten: Stopp/keine Überquerung bis frei.', level:2},
+{q:'Was ist das wichtigste bei der Nutzung von Mobiltelefon im Auto?', opts:['Nur kurz schreiben','Nur mit Freisprecheinrichtung oder Handsfree bedienen','Während Fahrt am Ohr halten','Während Halt im Stau tippen'], a:1, explain:'Telefonieren nur freihändig während der Fahrt; Berühren ist oft verboten.', level:2},
+{q:'Beim Überholen auf Landstraße: Worauf ist besonders zu achten?', opts:['Tempo erhöhen und sofort einlenken','Sicht, Gegenverkehr, ausreichender Seitenabstand','Nur links blinken','Hupen und überholen'], a:1, explain:'Überholen nur bei freier Sicht und ausreichend Platz.', level:2},
+{q:'Du parkst bergab an einer Straße ohne Bürgersteig. Wie stellst du die Räder?', opts:['Geradeaus','Zum Bordstein hin einschlagen','Von Bordstein weg drehen','Unwichtig'], a:1, explain:'Räder zum Bordstein einschlagen, damit Fahrzeug nicht in die Fahrbahn rollt.', level:2},
+{q:'Ein Fußgänger steht am Zebrastreifen und zeigt Absicht zum Überqueren. Wie handelst du?', opts:['Weiterfahren','Anhalten und Fußgänger passieren lassen','Hupen und weiterfahren','Nur, wenn er schon auf der Straße ist, anhalten'], a:1, explain:'Fußgänger haben Vorrang am Zebrastreifen.', level:1},
+{q:'Auf nasser Fahrbahn blockieren die Räder bei starker Bremsung. Was passiert?', opts:['Kurzzeitiges Gleiten (Verlust der Haftung)','Besseres Bremsverhalten','Kein Unterschied','Auto wird schneller'], a:0, explain:'Bei blockierten Rädern verliert das Fahrzeug Haftung und kann rutschen.', level:3},
+{q:'Du siehst ein Schild „Vorfahrtstraße“: Was bedeutet das?', opts:['Du musst anhalten','Du hast Vorfahrt bis Schildende','Du darfst nicht fahren','Nur Radfahrer haben Vorfahrt'], a:1, explain:'Vorfahrtstraße gibt dir Vorfahrt gegenüber einmündenden Straßen.', level:1},
+{q:'Wie viele Sekunden Abstand sind bei hoher Geschwindigkeit empfohlen (Faustregel)?', opts:['1 Sekunde','2 Sekunden (mind.)','10 Sekunden','0.5 Sekunden'], a:1, explain:'Mindestens 2 Sekunden Abstand; bei hoher Geschwindigkeit mehr.', level:2},
+{q:'Ein entgegenkommendes Fahrzeug fährt auf deiner Spur. Was ist erste Priorität?', opts:['Blinken','Bremsen und weichen, um Unfall zu vermeiden','Schneller fahren','Hupe laut'], a:1, explain:'Schutz vor Kollission: abbremsen und ausweichen falls möglich.', level:3},
+{q:'Bei starker Sonne und Blendung: Welche Maßnahme hilft unmittelbar?', opts:['Sonnenbrille, langsamer fahren, Sonnenblende nutzen','Fenster öffnen','Laut hupen','Mehr Abstand zum Vordermann verringern'], a:0, explain:'Sonnenbrille/Sonnenblende reduzieren Blendung; Geschwindigkeit anpassen.', level:2}
+],
+SE: [
+{q:'Du nähst dich einem Fußgängerüberweg und ein Fußgänger signalisiert, er will überqueren. Wie verhältst du dich?', opts:['Weiterfahren','Anhalten und Fußgänger passieren lassen','Nur hupen','Nur wenn er schon auf der Straße ist reagieren'], a:1, explain:'Fußgänger haben Vorrang, wenn sie deutlich die Absicht zeigen zu überqueren.', level:1},
+{q:'In Schweden bei winterlichen Verhältnissen: Was ist wichtig?', opts:['Sommerreifen sind ausreichend','Winter-/wintertaugliche Reifen verwenden','Reifenwahl egal','Nur Ketten verwenden'], a:1, explain:'Winterreifen sind bei Schnee/Eis entscheidend für Sicherheit.', level:2},
+{q:'Bei einer schmalen Straße: Du triffst Gegenverkehr; es gibt keine Ausweichstelle. Wer weicht?', opts:['Der größere Wagen','Der, der rückwärts fahren kann um Platz zu schaffen','Immer der erste','Der Schnellere'], a:1, explain:'Rücksicht: meist weicht derjenige, der leichter Platz schafft (z. B. rückwärts).', level:2},
+{q:'Was bedeutet ein blaues rundes Schild mit weißem Pfeil nach rechts?', opts:['Verbot rechts abzubiegen','Gebot rechts vorbeifahren','Parken erlaubt','Halteverbot'], a:1, explain:'Gebotszeichen: rechts vorbei fahren.', level:1},
+{q:'Wie verhalten bei starkem Seitenwind?', opts:['Normal weiterfahren','Lenken gegen den Wind, Geschwindigkeit reduzieren, Abstand halten','Fester Griff loslassen','Sofort anhalten'], a:1, explain:'Bei Seitenwind langsamer fahren, Lenkrad festhalten und Abstand erhöhen.', level:3},
+{q:'Du fährst in Schweden auf einer Landstraße und siehst Wildschilder. Was tun?', opts:['Ignorieren','Besonders aufmerksam fahren und Geschwindigkeit reduzieren','Hupen gegen Wild','Nur schneller fahren'], a:1, explain:'Wildwechsel möglich; Reduktion der Geschwindigkeit und erhöhte Aufmerksamkeit.', level:2},
+{q:'Bei Glatteis: Warum sind sanfte Lenk- und Bremsbewegungen wichtig?', opts:['Sonst rutschiges Verhalten vermeiden','Weil Reifen schneller verschleißen','Keine Auswirkung','Nur auf Autobahn relevant'], a:0, explain:'Sanfte Eingriffe erhalten die Haftung und verhindern Schleudern.', level:3},
+{q:'Was bedeutet „Högertrafik“?', opts:['Linksverkehr','Rechtsverkehr','Einbahnstraße','Fußgängerzone'], a:1, explain:'"Högertrafik" = Rechtsverkehr.', level:1},
+{q:'Wie verhalten bei einer Panne auf der Landstraße?', opts:['Warnblinker setzen, Warnweste anziehen und Fahrzeug sichern','Auto sofort verlassen und auf Straße stellen','Motor laufen lassen und nichts tun','Weiterfahren'], a:0, explain:'Sicherheit zuerst: Warnzeichen setzen und Fahrzeug sichern.', level:1},
+{q:'Bei Dämmerung: Welche Lichtregel ist wichtig?', opts:['Kein Licht nötig','Abblendlicht einschalten','Nur Standlicht','Nur Innenraumlicht'], a:1, explain:'Bei Dämmerung Abblendlicht oder Tagfahrlicht verwenden.', level:2},
+{q:'An einer Kreuzung ohne Beschilderung: Wie wird die Vorfahrt geregelt?', opts:['Der Schnellere hat Vorfahrt','Rechts-vor-Links','Der Linksabbieger','Der mit Blinker'], a:1, explain:'Rechts-vor-Links gilt typischerweise ohne Beschilderung.', level:1},
+{q:'Du überholst auf einer Landstraße: Wann ist Überholen verboten?', opts:['Bei freier Sicht','Bei unklarer Sicht oder Kurven und Kuppen','Immer erlaubt','Nur nachts verboten'], a:1, explain:'Überholen ist verboten bei beschränkter Sicht, Kurven, Kuppen und unübersichtlichen Stellen.', level:2},
+{q:'Was ist in einer Baustelle besonders wichtig?', opts:['Schnell fahren','Geschwindigkeit reduzieren und Anweisungen/Schilder beachten','Nur Lichthupe benutzen','Bitte weiterfahren'], a:1, explain:'Baustellen erfordern reduzierte Geschwindigkeit und Aufmerksamkeit.', level:2},
+{q:'Bei Nutzung des Handys während der Fahrt: Wann ist es erlaubt?', opts:['Immer','Nur mit Freisprecheinrichtung und berührungsfrei','Nur an Ampeln','Nur wenn geparkt'], a:1, explain:'Während der Fahrt nur freihändig nutzen; berührungsfreie Nutzung ist erlaubt.', level:2},
+{q:'Du fährst auf Schneematsch: Was ist besonders zu beachten?', opts:['Schneller fahren','Sanftes Bremsen und größere Abstände','Bremsen sofort','Fenster öffnen'], a:1, explain:'Schneematsch reduziert Haftung; Abstand vergrößern, sachte bremsen.', level:3},
+{q:'Ein Schulbus hält: Was bedeutet gelbes Blinklicht?', opts:['Sofort anhalten','Vorsicht, Bus hält zum Ein-/Aussteigen','Nichts','Nur Busfahrer beachten'], a:1, explain:'Gelb warnt, dass Kinder ein- oder aussteigen; besondere Vorsicht.', level:2},
+{q:'Wie reagierst du, wenn ein Fahrradfahrer auf der Fahrbahn plötzlich ausweicht?', opts:['Beschleunigen','Abbremsen und ausweichen wenn sicher','Hupen ununterbrochen','Ignorieren'], a:1, explain:'Sicherheit: abbremsen und, falls möglich, ausweichen.', level:2},
+{q:'Bei dichter Nebelbank: Welche Mittel sind sinnvoll?', opts:['Nebelscheinwerfer/Abblendlicht an, Geschwindigkeit reduzieren und Abstand vergrößern','Fernlicht anschalten','Schneller fahren','Nur Warnblinker nutzen'], a:0, explain:'Nebelscheinwerfer/Abblendlicht + reduziertes Tempo erhöhen Sicherheit.', level:3},
+{q:'Was bedeutet ein Fahrbahnmarkierung mit gestrichelter Linie?', opts:['Überholen verboten','Fahrstreifen trennen; Überholen möglich wenn sicher','Parken erlaubt','Ende der Zone'], a:1, explain:'Gestrichelte Linie trennt Fahrstreifen; Überholen möglich wenn sicher.', level:1},
+{q:'Du siehst ein Einsatzfahrzeug von hinten mit Blaulicht: Wie reagierst du?', opts:['Weiterfahren','Platz machen und gegebenenfalls anhalten','Schneller fahren','Nur hupen'], a:1, explain:'Einsatzfahrzeuge haben Vorrang; Platz schaffen und an den Rand fahren.', level:1},
+{q:'Beim Bergabfahren in engem Kurvenabschnitt: Welche Fahrtechnik hilft?', opts:['Hohe Gangzahl und Motorbremse nutzen','Niedriger Gang und Motorbremse zur Geschwindigkeitskontrolle','Kupplung treten und rollen lassen','Bremsen heißfahren lassen'], a:1, explain:'Niedriger Gang und Motorbremswirkung helfen, die Geschwindigkeit zu kontrollieren.', level:3},
+{q:'Wie weit solltest du in der Stadt mindestens vom vorausfahrenden Fahrzeug Abstand halten (Faustregel)?', opts:['1 m','Mind. 2 Sekunden Abstand','50 m','Keine Regel'], a:1, explain:'Faustregel: mind. 2 Sekunden; bei schlechter Sicht mehr.', level:2},
+{q:'Du parkst am Straßenrand: Wie sichert du das Fahrzeug bei steiler Straße?', opts:['Handbremse anziehen und Räder zum Bordstein einschlagen','Handbremse nicht nötig','Parken und Motor laufen lassen','Nur Gang einlegen'], a:0, explain:'Handbremse + Räder einschlagen verhindern Wegrollen.', level:2},
+{q:'Was bedeutet ein blaues Schild mit weißem Bett-Symbol (Rastplatz)?', opts:['Krankenhaus','Rastplatz/Unterkunft','Parkverbot','Ende der Autobahn'], a:1, explain:'Zeigt Rast- oder Übernachtungsmöglichkeiten an.', level:1},
+{q:'Bei Aquaplaning: Warum nicht stark bremsen?', opts:['Weil Reifen kurzzeitig keinen Grip haben und blockieren könnten','Weil es die Geschwindigkeit erhöht','Weil es die Straße beschädigt','Weil Motor abstirbt'], a:0, explain:'Starke Bremsung kann Räder blockieren; sanft reagieren ist sicherer.', level:3},
+{q:'Wie reagierst du, wenn ein anderes Fahrzeug dicht auffährt (Drängeln)?', opts:['Beschleunigen','Langsam fahren, ggf. Spur wechseln, Abstand halten','Hupen und rammen','Anhalten und streiten'], a:1, explain:'Sicherheit: Abstand halten, Ruhe bewahren und gegebenenfalls Spur wechseln.', level:2},
+{q:'Was ist beim Überqueren eines Fußgängerüberwegs mit Radweg zusätzlich zu beachten?', opts:['Nur auf Fußgänger schauen','Auch auf querende Fahrradfahrer achten','Nur Autos beachten','Nichts besonderes'], a:1, explain:'Radfahrer nutzen Radwege; ggf. beide Verkehrsteilnehmer beachten.', level:2},
+{q:'In welcher Situation ist das Benutzen von Nebelscheinwerfern erlaubt?', opts:['Bei normaler Sicht','Bei starker Sichtbehinderung wie Nebel oder starkem Regen','Immer nachts','Nur bei Schnee'], a:1, explain:'Nebelscheinwerfer nur bei schlechter Sicht, sonst Blendung möglich.', level:2},
+{q:'Du nähst dich einer Schule während Beginn/Ausgangszeit. Wie verhältst du dich?', opts:['Schnell durchfahren','Besonders langsam, Aufmerksamkeit auf Kinder richten und ggf. anhalten','Hupen, damit Kinder Platz machen','Nur auf Ampeln schauen'], a:1, explain:'Kinder können unerwartet auf die Straße treten; langsam und aufmerksam fahren.', level:1}
+],
+CH: [
+{q:'Auf Schweizer Autobahnen: Welche Richtgeschwindigkeit ist üblich?', opts:['80 km/h','100 km/h','120 km/h','140 km/h'], a:2, explain:'Oft gilt 120 km/h als zulässige Höchstgeschwindigkeit.', level:1},
+{q:'Beim Einfahren in einen Tunnel: Was ist wichtig?', opts:['Licht auslassen','Abblendlicht einschalten, Abstand vergrößern und aufmerksam bleiben','Fenster öffnen','Alle Türen öffnen'], a:1, explain:'Im Tunnel Abblendlicht verwenden und Abstand halten.', level:2},
+{q:'Du fährst bei starkem Nebel: Welche Maßnahmen sind ratsam?', opts:['Licht auslassen und schneller fahren','Abblendlicht/Nebelscheinwerfer einschalten, Abstand vergrößern und langsam fahren','Mit Warnblinker fahren','Auf dem Mittelstreifen fahren'], a:1, explain:'Sicht verbessern und Tempo reduzieren; Nebelscheinwerfer bei Bedarf.', level:3},
+{q:'Welche Regel gilt an einer Einmündung ohne Beschilderung?', opts:['Der von rechts hat Vorrang','Der Linksabbieger hat Vorrang','Der Schnellere hat Vorrang','Der größer Wagen hat Vorrang'], a:0, explain:'Rechts-vor-Links gilt in vielen Fällen ohne Zusatzbeschilderung.', level:1},
+{q:'In der Schweiz für Lernende: Welche Alkoholregel ist oft empfohlen oder vorgeschrieben?', opts:['0.0% (kein Alkohol)','0.5%','0.8%','1.0%'], a:0, explain:'Für Lernende/Fahranfänger wird häufig Null-Promille empfohlen oder verlangt.', level:3},
+{q:'Wie verhalten wenn ein Rettungsfahrzeug mit Blaulicht auffährt?', opts:['Weiterfahren','Sofort Platz machen und anhalten, wenn nötig','Schneller fahren','Ignorieren'], a:1, explain:'Rettungsfahrzeuge haben Vorrang; Platz schaffen und, falls nötig, anhalten.', level:1},
+{q:'Was ist bei winterlichen Bedingungen mit der Vignette auf Autobahnen zu beachten?', opts:['Vignette nur im Sommer nötig','Vignette ist Jahresvignette und unabhängig von Winterreifenpflicht','Vignette nur für LKW','Vignette nicht nötig auf Autobahn'], a:1, explain:'Vignette ist Jahreskleber; unabhängig von Reifenauswahl, aber beides beachten.', level:2},
+{q:'Wie verhalten bei Aquaplaning in den Bergen?', opts:['Vollbremsung','Leichtes Gas wegnehmen, Lenkrad gerade halten, keine scharfen Lenkmanöver','Fenster öffnen','Motor abstellen'], a:1, explain:'Sanfte Reaktion und lenken vermeiden; Geschwindigkeit reduzieren.', level:3},
+{q:'Du fährst bergauf und ein langsamer LKW hält zurück. Wie reagierst du?', opts:['Überholen, egal ob Strecke unübersichtlich','Nicht überholen wenn Gefahr besteht; Abstand halten','Hupen und drängeln','Sofort wenden'], a:1, explain:'Überholen nur wenn ausreichend Sicht und Platz vorhanden ist.', level:2},
+{q:'Wie verhalten bei Panne im Tunnel?', opts:['Fahrzeug verlassen und laufen','Lichter anlassen, Warnblinker setzen, Notruf/Notausgang nutzen','Rückwärts fahren','Fenster öffnen und hinausklettern'], a:1, explain:'Im Tunnel bleiben und Sicherheitsanweisungen folgen; Notausgang oder Nothilfe nutzen.', level:3},
+{q:'Bei starkem Schneefall: Welche Bereifung ist sinnvoll?', opts:['Sommerreifen weiterhin nutzen','Winterreifen oder Allwetterreifen mit ausreichend Profil verwenden','Reifen irrelevant','Nur Ketten erlauben'], a:1, explain:'Wintertaugliche Bereifung verbessert Haftung und Sicherheit.', level:2},
+{q:'Was bedeutet ein weißes Schild mit rotem Rand und einem Auto (Durchfahrtsverbot)?', opts:['Parken erlaubt','Durchfahrtsverbot für Fahrzeuge','Ende einer Zone','Autobahn beginnt'], a:1, explain:'Solche Schilder signalisieren oft Durchfahrts- oder Zugangsverbote für bestimmte Fahrzeuge.', level:2},
+{q:'Wie verhalten auf engen Bergstraßen bei Gegenverkehr?', opts:['Auf Rückwärtsfahrt des Anderen hoffen','Langsam an geeigneter Stelle zurücksetzen oder ausweichen, Kooperation zeigen','Ignorieren und weiterfahren','Sofort wenden'], a:1, explain:'Kooperativ eine Ausweichstelle nutzen oder zurücksetzen.', level:3},
+{q:'Was ist die richtige Sitzposition für sichere Kontrolle?', opts:['Ganz zurücklehnen','So sitzen, dass Pedale und Lenkrad bequem erreichbar sind; Rückenstütze nutzen','Mit ausgestreckten Beinen','Kopfstütze weglassen'], a:1, explain:'Gute Sitzposition verbessert Kontrolle und reduziert Verletzungsrisiken.', level:1},
+{q:'Welcher Abstand wird bei 120 km/h empfohlen (Faustregel)?', opts:['1 m','Mind. halber Tachowert in Metern (≈60 m)','10 m','Keine Regel'], a:1, explain:'Faustregel: halber Tachowert in Metern; hier ≈60 m.', level:3},
+{q:'Wie reagierst du auf ein Warnschild „Achtung: Steinschlag“?', opts:['Schneller fahren','Geschwindigkeit reduzieren und aufmerksam fahren','Fenster öffnen','Hupen'], a:1, explain:'Geschwindigkeit verringern und erhöhtes Augenmerk auf Straßenzustand legen.', level:2},
+{q:'Ein Kreuzungsbereich ist unübersichtlich durch geparkte Autos. Wie verhalten?', opts:['Vorsichtig fahren, ggf. anhalten und Sicht schaffen','Einfach durchfahren','Schneller fahren','Hupen und fahren'], a:0, explain:'Vorsichtiges Vorgehen verhindert Unfälle mit verborgenen Verkehrsteilnehmern.', level:2},
+{q:'Was ist zu tun, wenn du auf Eis ins Schleudern gerätst?', opts:['Gegenlenken stark und abrupt bremsen','Sanft gegenlenken und Bremsen vermeiden sofern möglich','Vollgas geben','Aussteigen'], a:1, explain:'Sanfte Lenkbewegungen und kontrolliertes Handeln verhindern Übersteuern.', level:3},
+{q:'Wie verhältst du dich bei einer Polizeikontrolle, die dich an der Seite anhält?', opts:['Sofort aussteigen und weglaufen','Langsam anhalten, Fenster ggf. öffnen, Anweisungen folgen','Beschleunigen und flüchten','Hupen'], a:1, explain:'Ruhe bewahren, Anweisungen der Polizei folgen.', level:1},
+{q:'Bei Überholen auf der Autobahn: Worauf ist besonders zu achten?', opts:['Nur auf Tacho schauen','Spiegel, Schulterblick, ausreichender Seitenabstand und sichere Rückkehr','Nur auf Blinker achten','Hupen und überholen'], a:1, explain:'Spiegel + Schulterblick und ausreichend Platz sind entscheidend.', level:2},
+{q:'Welche Profiltiefe wird für Winterreifen oft empfohlen?', opts:['1 mm','3 mm','5 mm','7 mm'], a:1, explain:'Mindestens ca. 3 mm empfohlen; Vorschriften variieren.', level:2},
+{q:'Ein Rettungsfahrzeug kommt entgegen und blockiert die Spur. Du bist bergauf. Was tun?', opts:['Weiterfahren','Platz machen, an den Rand fahren wenn möglich, Rücksicht nehmen','Hupen und weiterfahren','Ignorieren'], a:1, explain:'Platz machen und Rücksicht zeigen; Rettungsdienste haben Vorrang.', level:3},
+{q:'Was ist beim Fahren mit Anhänger besonders wichtig?', opts:['Schneller fahren als ohne Anhänger','Längere Bremswege beachten, Geschwindigkeit und Kurvenverhalten anpassen','Anhänger ignorieren','Nur bei Bergabfahrt bremsen'], a:1, explain:'Anhänger beeinflusst Brems- und Kurvenverhalten; Geschwindigkeit anpassen.', level:2},
+{q:'Wie verhalten bei defekter Ampel nach Unfall?', opts:['Nach Polizei/Verkehrszeichen/Regeln verfahren; ggf. rechts-vor-links, Anweisungen folgen','Sofort wenden','Schnell durchfahren','Immer anhalten und warten'], a:0, explain:'Anweisungen und Verkehrsregeln befolgen; Sicherheit beachten.', level:3},
+{q:'Du siehst ein Kind auf dem Gehweg, das Ball spielt. Was tust du?', opts:['Unverändert fahren','Geschwindigkeit reduzieren und bereit sein zu bremsen','Hupen und weiterfahren','Beschleunigen'], a:1, explain:'Kinder können plötzlich auf die Straße laufen; besondere Vorsicht.', level:1},
+{q:'Bei starkem Regen: Welche Maßnahmen verbessern Sicht?', opts:['Fenster schließen, Scheibenwischer einschalten, Geschwindigkeit reduzieren','Fenster öffnen','Nur Ton lauter stellen','Hupen'], a:0, explain:'Scheibenwischer + Geschwindigkeit reduzieren verbessern Sicht.', level:2},
+{q:'Wie verhältst du dich bei einem Notfall, bei dem Erste Hilfe nötig ist und du als erster ankommst?', opts:['An Unfallstelle absichern (Warnblinker, Warndreieck), Hilfe leisten, Rettungsdienst rufen','Weiterfahren','Fotos machen und posten','Weglaufen'], a:0, explain:'Erste Hilfe leisten und Unfallstelle absichern ist wichtig.', level:3},
+{q:'Was ist die richtige Reaktion auf Aquaplaning auf einer Autobahn?', opts:['Fest bremsen','Gas wegnehmen, Lenkrad gerade halten und nicht abrupt bremsen','Schneller fahren','Fenster öffnen'], a:1, explain:'Ruhig lenken, keine starken Lenk- oder Bremsmanöver; Geschwindigkeit reduzieren.', level:3}
+]
+};
+
+// helpers
+function cloneDeep(o){return JSON.parse(JSON.stringify(o));}
+function shuffle(a){const b=[...a]; for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]]} return b;}
+
+// state and dom
+let state={bank:[],index:0,score:0,answers:[],displayBank:[]};
+const countrySel=document.getElementById('country');
+const countSel=document.getElementById('count');
+const startBtn=document.getElementById('startBtn');
+const quizArea=document.getElementById('quizArea');
+const startPanel=document.getElementById('startPanel');
+const questionText=document.getElementById('questionText');
+const optionsEl=document.getElementById('options');
+const qnum=document.getElementById('qnum');
+const scoreEl=document.getElementById('score');
+const progBar=document.getElementById('progBar');
+const qgrid=document.getElementById('qgrid');
+const correctCount=document.getElementById('correctCount');
+const wrongCount=document.getElementById('wrongCount');
+const explainEl=document.getElementById('explain');
+const prevBtn=document.getElementById('prevBtn');
+const nextBtn=document.getElementById('nextBtn');
+const finishBtn=document.getElementById('finishBtn');
+const resultCard=document.getElementById('resultCard');
+const historyList=document.getElementById('historyList');
+const clearHistBtn=document.getElementById('clearHistBtn');
+const exportPdfBtn=document.getElementById('exportPdfBtn');
+const statSummary=document.getElementById('statSummary');
+
+const THRESHOLDS={US:0.8,SE:0.75,CH:0.85};
+const HISTORY_KEY='autotheorie_history_v2';
+
+function buildAdaptiveBank(){
+  const country=countrySel.value;
+  const total=Number(countSel.value);
+  const all=cloneDeep(BANKS[country]);
+  // initial weights
+  const easy=all.filter(q=>q.level===1), mid=all.filter(q=>q.level===2), hard=all.filter(q=>q.level===3);
+  if(state.displayBank.length===0){
+    let pick=[];
+    pick=pick.concat(easy.slice(0,Math.ceil(total*0.6)));
+    pick=pick.concat(mid.slice(0,Math.ceil(total*0.3)));
+    pick=pick.concat(hard.slice(0,total-pick.length));
+    if(pick.length<total){ pick=pick.concat(all.slice(pick.length,total)); }
+    const prepared=pick.map(q=>{ const correct=q.opts[q.a]; const s=shuffle(q.opts); const newIndex=s.indexOf(correct); return {q:q.q,opts:s,a:newIndex,explain:q.explain,level:q.level}; });
+    return shuffle(prepared);
+  }
+  // adapt based on performance
+  const answered=state.answers.filter(a=>a!==null).length;
+  const pct=answered? (state.score/answered) : 0;
+  let weights;
+  if(pct<0.5) weights={1:0.5,2:0.35,3:0.15};
+  else if(pct<0.8) weights={1:0.3,2:0.5,3:0.2};
+  else weights={1:0.15,2:0.45,3:0.4};
+  let n1=Math.round(weights[1]*total), n2=Math.round(weights[2]*total); let n3=total-n1-n2; if(n3<0){ n3=0; n2=total-n1; }
+  const pickFrom=(arr,n)=>{ const p=[...arr], res=[]; while(res.length<n && p.length){ res.push(p.splice(Math.floor(Math.random()*p.length),1)[0]); } return res; };
+  let pick=[]; pick=pick.concat(pickFrom(easy,n1)); pick=pick.concat(pickFrom(mid,n2)); pick=pick.concat(pickFrom(hard,n3));
+  if(pick.length<total){ const rest=all.filter(q=>!pick.includes(q)); pick=pick.concat(rest.slice(0,total-pick.length)); }
+  const prepared=pick.map(q=>{ const correct=q.opts[q.a]; const s=shuffle(q.opts); const newIndex=s.indexOf(correct); return {q:q.q,opts:s,a:newIndex,explain:q.explain,level:q.level}; });
+  return shuffle(prepared);
+}
+
+function startQuiz(){ state.score=0; state.answers=[]; state.displayBank=buildAdaptiveBank(); state.bank=state.displayBank; state.index=0; state.answers=Array(state.bank.length).fill(null); renderGrid(); renderQuestion(); updateMeta(); startPanel.hidden=true; quizArea.hidden=false; resultCard.hidden=true; }
+
+function renderGrid(){ qgrid.innerHTML=''; state.bank.forEach((_,i)=>{ const el=document.createElement('div'); el.className='qcell'; el.textContent=i+1; if(i===state.index) el.classList.add('current'); el.addEventListener('click',()=>{ goto(i); }); qgrid.appendChild(el); }); updateProg(); updateGridHighlight(); }
+
+function renderQuestion(){ const q=state.bank[state.index]; if(!q) return; questionText.textContent=q.q; optionsEl.innerHTML=''; q.opts.forEach((opt,i)=>{ const b=document.createElement('button'); b.className='option'; b.type='button'; b.setAttribute('role','radio'); b.setAttribute('aria-checked','false'); b.textContent=opt; b.addEventListener('click',()=>selectOption(i,b)); optionsEl.appendChild(b); }); explainEl.hidden=true; explainEl.textContent=''; qnum.textContent=`Frage ${state.index+1} / ${state.bank.length} (Schwierigkeit: ${q.level})`; updateGridHighlight(); updateProg(); }
+
+function selectOption(i,btn){ if(state.answers[state.index] !== null) return; state.answers[state.index]=i; const q=state.bank[state.index]; const buttons=optionsEl.querySelectorAll('.option'); buttons.forEach((b,idx)=>{ b.setAttribute('aria-checked', idx===i ? 'true' : 'false'); if(idx===q.a) b.classList.add('correct'); if(idx===i && idx!==q.a) b.classList.add('incorrect'); }); if(i===q.a) state.score++; updateMeta(); adaptUpcoming(); showExplain(); saveStateToStorage(); }
+
+function showExplain(){ const q=state.bank[state.index]; if(!q) return; explainEl.hidden=false; explainEl.textContent=q.explain||''; }
+
+function updateMeta(){ scoreEl.textContent=state.score; const right=state.answers.filter((a,idx)=>a!==null && state.bank[idx].a===a).length; const wrong=state.answers.filter((a,idx)=>a!==null && state.bank[idx].a!==a).length; correctCount.textContent='Richtig: '+right; wrongCount.textContent='Falsch: '+wrong; }
+
+function updateProg(){ progBar.style.width = state.bank.length ? ((state.index)/state.bank.length*100)+'%' : '0%'; }
+
+function updateGridHighlight(){ Array.from(qgrid.children).forEach((el,idx)=>{ el.classList.toggle('current', idx===state.index); el.classList.toggle('answered', state.answers[idx]!==null); }); }
+
+function goto(i){ state.index=i; renderQuestion(); }
+
+function adaptUpcoming(){ const answeredCount=state.answers.filter(a=>a!==null).length; const total=state.bank.length; const remaining=total-(state.index+1); if(remaining<=0) return; const country=countrySel.value; const all=cloneDeep(BANKS[country]); const usedTexts=state.bank.slice(0,state.index+1).map(q=>q.q); const pool=all.filter(q=>!usedTexts.includes(q.q)); const buckets={1:pool.filter(q=>q.level===1),2:pool.filter(q=>q.level===2),3:pool.filter(q=>q.level===3)}; const pct=state.score/Math.max(1,answeredCount); let weights; if(pct<0.5) weights={1:0.5,2:0.35,3:0.15}; else if(pct<0.8) weights={1:0.3,2:0.5,3:0.2}; else weights={1:0.15,2:0.45,3:0.4}; let n1=Math.round(weights[1]*remaining), n2=Math.round(weights[2]*remaining); let n3=remaining-n1-n2; if(n3<0){n3=0;n2=remaining-n1;} const pickFrom=(arr,n)=>{const p=[...arr],res=[];while(res.length<n&&p.length){res.push(p.splice(Math.floor(Math.random()*p.length),1)[0]);}return res;}; let newSel=[]; newSel=newSel.concat(pickFrom(buckets[1],n1)); newSel=newSel.concat(pickFrom(buckets[2],n2)); newSel=newSel.concat(pickFrom(buckets[3],n3)); if(newSel.length<remaining){ const rest=pool.filter(q=>!newSel.includes(q)); newSel=newSel.concat(rest.slice(0,remaining-newSel.length)); } const prepared=newSel.map(q=>{ const correct=q.opts[q.a]; const s=shuffle(q.opts); const newIndex=s.indexOf(correct); return {q:q.q,opts:s,a:newIndex,explain:q.explain,level:q.level}; }); const prefix=state.bank.slice(0,state.index+1); state.bank=prefix.concat(prepared); renderGrid(); updateMeta(); }
+
+// history
+function loadHistory(){ try{ const raw=localStorage.getItem(HISTORY_KEY); return raw? JSON.parse(raw): []; }catch(e){return [];} }
+function saveHistory(h){ localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); }
+function addResultToHistory(r){ const h=loadHistory(); h.push(r); saveHistory(h); renderHistory(); }
+function clearHistory(){ localStorage.removeItem(HISTORY_KEY); renderHistory(); }
+
+function renderHistory(){ const hist=loadHistory().sort((a,b)=>new Date(b.date)-new Date(a.date)); historyList.innerHTML=''; const counts={US:{ok:0,fail:0},SE:{ok:0,fail:0},CH:{ok:0,fail:0}}; hist.forEach(r=>{ const d=new Date(r.date); const row=document.createElement('div'); row.className='histItem'; row.textContent=`${d.toLocaleString()} — ${r.country} — ${r.right}/${r.total} (${Math.round(r.percent*100)}%) — ${r.passed? 'Bestanden':'Nicht bestanden'}`; historyList.appendChild(row); if(r.passed) counts[r.country].ok++; else counts[r.country].fail++; }); statSummary.textContent = `Gesamt: US ${counts.US.ok}/${counts.US.fail} • SE ${counts.SE.ok}/${counts.SE.fail} • CH ${counts.CH.ok}/${counts.CH.fail}`; }
+
+// finish
+finishBtn.addEventListener('click', ()=>{
+  const total=state.bank.length;
+  const right=state.answers.filter((a,idx)=>a!==null && state.bank[idx].a===a).length;
+  const wrong=state.answers.filter((a,idx)=>a!==null && state.bank[idx].a!==a).length;
+  const country=countrySel.value;
+  const percent = total? (right/total) : 0;
+  const threshold = THRESHOLDS[country] || 0.8;
+  const passed = percent >= threshold;
+  const date = new Date().toISOString();
+  const details = state.bank.map((q,idx)=>{ const sel=state.answers[idx]; return {q:q.q, opts:q.opts, selectedIndex:sel, selectedText: sel===null?null:q.opts[sel], correctIndex:q.a, correctText:q.opts[q.a], explain:q.explain, level:q.level}; });
+  const result = {date,country,total,right,wrong,percent,threshold,passed,details};
+  addResultToHistory(result);
+  showResultCard(result);
+});
+
+function showResultCard(result){
+  resultCard.hidden=false;
+  const flag = result.country==='US'?'🇺🇸':(result.country==='SE'?'🇸🇪':'🇨🇭');
+  const pct=Math.round(result.percent*100);
+  resultCard.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div>
+        <strong>${flag} ${result.country}</strong><br>
+        <span class="small">Fragen: ${result.total} — Richtig: ${result.right} — Falsch: ${result.wrong} — ${pct}%</span><br>
+        <span class="small">Zum Bestehen benötigt: ${Math.round(result.threshold*100)}%</span>
+      </div>
+      <div style="text-align:right">
+        <div style="font-weight:600">${result.passed?'Bestanden ✅':'Nicht bestanden ❌'}</div>
+        <div style="margin-top:8px"><button id="restartBtn">Neue Prüfung</button> <button id="downloadPdfSingle">Ergebnis als PDF</button></div>
+      </div>
+    </div>
+    <div style="margin-top:10px" class="small">Detaillierte Fragen der letzten Prüfung sind im PDF enthalten.</div>
+  `;
+  document.getElementById('restartBtn').addEventListener('click', ()=>{ startPanel.hidden=false; quizArea.hidden=true; resultCard.hidden=true; });
+  document.getElementById('downloadPdfSingle').addEventListener('click', ()=>{ exportPdf(true); });
+}
+
+// PDF export (single or full)
+// builds HTML and opens print dialog - uses color styles for right/wrong inlined
+function exportPdf(singleOnly){
+  const hist = loadHistory().sort((a,b)=>new Date(b.date)-new Date(a.date));
+  let html = `<!doctype html><html><head><meta charset="utf-8"><title>Autotheorie Ergebnisse</title><style>
+  body{font-family:Arial,Helvetica,sans-serif;color:#111;background:#fff;padding:20px}h1,h2,h3{margin:0 0 8px 0}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f4f4f4} .ok{background:#e6ffef;} .bad{background:#ffecec;} .explain{color:#555;font-size:12px}</style></head><body>`;
+  // header summary
+  const totalExams = hist.length;
+  const summary = {US:{ok:0,fail:0,sumPct:0,count:0},SE:{ok:0,fail:0,sumPct:0,count:0},CH:{ok:0,fail:0,sumPct:0,count:0}};
+  hist.forEach(r=>{ if(r.passed) summary[r.country].ok++; else summary[r.country].fail++; summary[r.country].sumPct += r.percent; summary[r.country].count++; });
+  const avg = (c)=> c.count? Math.round((c.sumPct/c.count)*100) : 0;
+  html += `<h1>Autotheorie - Prüfungsübersicht</h1><p>Erstellt: ${new Date().toLocaleString()}</p><p>Insgesamt ${totalExams} Prüfungen — ✅ ${hist.filter(h=>h.passed).length} / ❌ ${hist.filter(h=>!h.passed).length}</p>`;
+  html += `<p>Durchschnitt: 🇺🇸 ${avg(summary.US)}% • 🇸🇪 ${avg(summary.SE)}% • 🇨🇭 ${avg(summary.CH)}%</p>`;
+  // table of all results
+  html += `<h2>Alle Prüfungen (neueste zuerst)</h2><table><thead><tr><th>Datum</th><th>Land</th><th>Richtig</th><th>Falsch</th><th>Prozent</th><th>Ergebnis</th><th>Limit</th></tr></thead><tbody>`;
+  hist.forEach(r=>{ const d=new Date(r.date); html += `<tr><td>${d.toLocaleString()}</td><td>${r.country}</td><td>${r.right}</td><td>${r.wrong}</td><td>${Math.round(r.percent*100)}%</td><td>${r.passed?'Bestanden':'Nicht bestanden'}</td><td>${Math.round(r.threshold*100)}%</td></tr>`; });
+  html += `</tbody></table>`;
+  // summary per country
+  html += `<h2>Gesamtstatistik</h2><ul><li>USA: Bestanden ${summary.US.ok} / Nicht bestanden ${summary.US.fail}</li><li>Schweden: Bestanden ${summary.SE.ok} / Nicht bestanden ${summary.SE.fail}</li><li>Schweiz: Bestanden ${summary.CH.ok} / Nicht bestanden ${summary.CH.fail}</li></ul>`;
+  if(singleOnly){
+    const last = hist[0];
+    if(last){
+      html += `<h2>Letzte Prüfung - Details (${new Date(last.date).toLocaleString()}) — ${last.country} — ${Math.round(last.percent*100)}% ${last.passed?'(Bestanden)':''}</h2>`;
+      html += `<p>Bestanden: ${last.passed? 'Ja' : 'Nein'} — Punktzahl: ${last.right}/${last.total} — Limit: ${Math.round(last.threshold*100)}%</p>`;
+      html += `<table><thead><tr><th>#</th><th>Frage</th><th>Deine Antwort</th><th>Richtig</th><th>Erklärung</th></tr></thead><tbody>`;
+      last.details.forEach((d,i)=>{
+        const ok = d.selectedText && d.selectedText === d.correctText;
+        html += `<tr class="${ok? 'ok':'bad'}"><td>${i+1}</td><td>${escapeHtml(d.q)}</td><td>${escapeHtml(d.selectedText || '—')}</td><td>${escapeHtml(d.correctText)}</td><td class="explain">${escapeHtml(d.explain)}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+    } else {
+      html += `<p>Keine Prüfungen vorhanden.</p>`;
+    }
+  } else {
+    // details for all
+    html += `<h2>Details aller Prüfungen</h2>`;
+    hist.forEach((r,idx)=>{
+      html += `<h3>${idx+1}. ${new Date(r.date).toLocaleString()} — ${r.country} — ${r.passed? 'Bestanden':'Nicht bestanden'}</h3>`;
+      html += `<table><thead><tr><th>#</th><th>Frage</th><th>Deine Antwort</th><th>Richtig</th><th>Erklärung</th></tr></thead><tbody>`;
+      r.details.forEach((d,i)=>{
+        const ok = d.selectedText && d.selectedText === d.correctText;
+        html += `<tr class="${ok? 'ok':'bad'}"><td>${i+1}</td><td>${escapeHtml(d.q)}</td><td>${escapeHtml(d.selectedText || '—')}</td><td>${escapeHtml(d.correctText)}</td><td class="explain">${escapeHtml(d.explain)}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+    });
+  }
+  html += `</body></html>`;
+  const w = window.open('','_blank');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(()=>{ w.focus(); w.print(); }, 400);
+}
+
+function escapeHtml(s){ if(!s) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// persistence for mid-quiz
+function saveStateToStorage(){ const key='autotheorie_final_state_'+countrySel.value+'_'+countSel.value; const d={bank:state.bank,index:state.index,score:state.score,answers:state.answers}; localStorage.setItem(key, JSON.stringify(d)); }
+function loadStateFromStorage(){ const key='autotheorie_final_state_'+countrySel.value+'_'+countSel.value; const raw=localStorage.getItem(key); if(raw){ try{ const d=JSON.parse(raw); if(d && d.bank){ state.bank=d.bank; state.index=d.index||0; state.score=d.score||0; state.answers=d.answers||Array(d.bank.length).fill(null); state.displayBank=state.bank; renderGrid(); renderQuestion(); startPanel.hidden=true; quizArea.hidden=false; } }catch(e){} } }
+
+// nav and init
+prevBtn.addEventListener('click', ()=>{ if(state.index>0){ state.index--; renderQuestion(); } });
+nextBtn.addEventListener('click', ()=>{ if(state.index < state.bank.length-1){ state.index++; renderQuestion(); } else { alert('Ende der Fragen. Klicke Beenden für Ergebnis.'); } });
+startBtn.addEventListener('click', ()=>{ startQuiz(); saveStateToStorage(); });
+countrySel.addEventListener('change', ()=>{ loadStateFromStorage(); renderHistory(); });
+countSel.addEventListener('change', ()=>{});
+exportPdfBtn.addEventListener('click', ()=>{ exportPdf(false); });
+clearHistBtn.addEventListener('click', ()=>{ if(confirm('Historie wirklich löschen?')) clearHistory(); });
+optionsEl.addEventListener('click', ()=>{ saveStateToStorage(); updateMeta(); });
+document.addEventListener('keydown', (e)=>{ if(quizArea.hidden) return; if(e.key==='ArrowRight') nextBtn.click(); if(e.key==='ArrowLeft') prevBtn.click(); if(e.key>='1'&&e.key<='4'){ const idx=Number(e.key)-1; const q=state.bank[state.index]; if(q && idx < q.opts.length){ const btn = optionsEl.children[idx]; btn && btn.click(); } } });
+
+// initial render
+renderHistory();
+</script>
+</body>
+</html>
