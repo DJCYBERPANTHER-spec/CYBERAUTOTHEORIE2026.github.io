@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CYBER DJ LIVE MIXER PRO Ultimate</title>
+<style>
+body {margin:0;font-family:Arial,sans-serif;background:#050505;color:#fff;}
+h1{text-align:center;margin:10px;}
+#controls,#transition,#fxPanel{background:#141414;margin:10px auto;padding:12px;border-radius:12px;max-width:1200px;}
+#decks{display:flex;flex-wrap:wrap;justify-content:center;}
+.deck{width:320px;background:#1a1a1a;margin:8px;padding:12px;border-radius:14px;box-shadow:0 0 15px #000;display:flex;flex-direction:column;align-items:center;}
+button{width:90%;padding:12px;margin-top:6px;border:none;border-radius:10px;background:#ff0066;color:#fff;cursor:pointer;font-size:16px;}
+button:hover{background:#ff3388;}
+input[type=range],select{width:90%;margin-top:6px;}
+label{font-size:12px;display:block;margin-top:6px;}
+.small{font-size:12px;opacity:0.85;}
+.crossfader{width:90%;margin:20px auto;height:40px;background:#222;border-radius:20px;position:relative;touch-action:none;}
+.fader{width:40px;height:40px;background:#ff0066;border-radius:50%;position:absolute;top:0;left:50%;transform:translateX(-50%);cursor:pointer;}
+.waveform{width:100%;height:60px;background:#333;margin-top:10px;border-radius:6px;position:relative;overflow:hidden;}
+.waveform-bar{position:absolute;bottom:0;width:2px;}
+.hotcue{width:40px;height:40px;border-radius:50%;margin:4px;background:#ff0066;cursor:pointer;}
+.hotcue.active{background:#0f0;}
+.hotcue-container{display:flex;flex-wrap:wrap;justify-content:center;margin-top:6px;}
+.progress{width:90%;height:6px;background:#222;margin-top:6px;border-radius:3px;overflow:hidden;}
+.progress-bar{height:6px;background:#ff0066;width:0%;}
+#kiLog{max-height:120px;overflow-y:auto;margin-top:6px;background:#111;padding:6px;border-radius:8px;font-size:12px;}
+@media(max-width:1000px){.deck{width:90%;margin:5px;}}
+</style>
+</head>
+<body>
+<h1>CYBER DJ LIVE MIXER PRO Ultimate 🎧</h1>
+
+<div id="controls">
+<label>Wie viele Decks?</label>
+<input id="deckCount" type="range" min="2" max="10" step="1" value="2" oninput="updateDeckCount(this.value)">
+<div class="small">Decks: <span id="deckCountLabel">2</span></div>
+<label><input type="checkbox" id="autoKIChk"> KI Automatik ein</label>
+<div id="kiStatus" class="small">Automatik: Aus</div>
+<div id="kiLog"></div>
+</div>
+
+<div id="transition">
+<h3>Übergang / AutoMix</h3>
+<label>Von Deck</label>
+<select id="fromDeck"></select>
+<label>Zu Deck</label>
+<select id="toDeck"></select>
+<label>Dauer (Sekunden)</label>
+<input id="mixDuration" type="range" min="1" max="10" value="3">
+<button onclick="autoMixSelected()">AUTO MIX</button>
+</div>
+
+<div class="crossfader" id="crossfader"><div class="fader" id="fader"></div></div>
+
+<div id="fxPanel">
+<h3>FX & Master</h3>
+<button onclick="dropFX()">DROP FX</button>
+<button onclick="masterLimiter()">Limiter / Kompressor</button>
+<button onclick="saveSession()">Projekt speichern</button>
+<button onclick="loadSession()">Projekt laden</button>
+<h3>Live Aufnahme</h3>
+<button id="startRecBtn">Start Aufnahme</button>
+<button id="stopRecBtn" disabled>Stop Aufnahme</button>
+<a id="downloadLink" style="display:block;margin-top:10px;color:#0f0;"></a>
+</div>
+
+<div id="decks"></div>
+<div style="margin:20px auto;font-size:12px;opacity:0.7;text-align:center;">CYBERPANTHER PROGRAMM</div>
+<script>
+// --- AudioContext ---
+const ctx = new (window.AudioContext || window.webkitAudioContext)();
+const master = ctx.createGain();
+master.connect(ctx.destination);
+
+// --- Decks & KI ---
+let decks = [];
+let autoKI = false;
+document.getElementById('autoKIChk').addEventListener('change', e => {
+    autoKI = e.target.checked;
+    document.getElementById('kiStatus').textContent = "Automatik: " + (autoKI ? "Ein" : "Aus");
+});
+
+// --- Deck erstellen ---
+function createDeck(id){
+    const gain = ctx.createGain(); gain.gain.value = 0.8;
+    const eq = {
+        bass: ctx.createBiquadFilter(),
+        mid: ctx.createBiquadFilter(),
+        high: ctx.createBiquadFilter()
+    };
+    eq.bass.type = 'lowshelf'; eq.bass.frequency.value = 200;
+    eq.mid.type = 'peaking'; eq.mid.frequency.value = 1000;
+    eq.high.type = 'highshelf'; eq.high.frequency.value = 3000;
+    eq.bass.connect(eq.mid); eq.mid.connect(eq.high); eq.high.connect(gain); gain.connect(master);
+    return {id, buffer:null, source:null, gain, eq, cue:0, speed:1, hotcues:[0,0,0,0], playing:false, startTime:0};
+}
+
+// --- Deck rendern ---
+function renderDeck(deck){
+    const d = document.createElement('div'); d.className='deck'; d.id='deck'+deck.id;
+    d.innerHTML=`
+    <h3>Deck ${deck.id}</h3>
+    <input type="file" accept="audio/*" onchange="loadDeck(${deck.id},this.files[0])">
+    <button onclick="playDeck(${deck.id})">Play</button>
+    <button onclick="stopDeck(${deck.id})">Stop</button>
+    <label>Volume</label><input type="range" min="0" max="1" step="0.01" value="0.8" oninput="setVol(${deck.id},this.value)">
+    <label>Tempo</label><input type="range" min="0.5" max="1.5" step="0.01" value="1" oninput="setSpeed(${deck.id},this.value)">
+    <label>Bass</label><input type="range" min="-30" max="30" value="0" oninput="setEQ(${deck.id},'bass',this.value)">
+    <label>Mid</label><input type="range" min="-30" max="30" value="0" oninput="setEQ(${deck.id},'mid',this.value)">
+    <label>High</label><input type="range" min="-30" max="30" value="0" oninput="setEQ(${deck.id},'high',this.value)">
+    <button onclick="setCue(${deck.id})">Set Cue</button>
+    <button onclick="gotoCue(${deck.id})">Go Cue</button>
+    <div class="waveform" id="waveform${deck.id}"></div>
+    <div class="progress"><div class="progress-bar" id="progress${deck.id}"></div></div>
+    <div style="width:90%;display:flex;justify-content:space-between;font-size:12px;margin-top:2px;">
+        <span id="currentTime${deck.id}">0:00</span>
+        <span id="totalTime${deck.id}">0:00</span>
+    </div>
+    <div class="hotcue-container" id="hotcues${deck.id}">
+        <div class="hotcue" onclick="triggerHotcue(${deck.id},0)"></div>
+        <div class="hotcue" onclick="triggerHotcue(${deck.id},1)"></div>
+        <div class="hotcue" onclick="triggerHotcue(${deck.id},2)"></div>
+        <div class="hotcue" onclick="triggerHotcue(${deck.id},3)"></div>
+    </div>`;
+    return d;
+}
+
+// --- Deck Count ---
+function updateDeckCount(count){
+    count=parseInt(count); document.getElementById('deckCountLabel').textContent=count;
+    const container=document.getElementById('decks'); container.innerHTML=''; decks=[];
+    for(let i=1;i<=count;i++){
+        const d=createDeck(i); decks.push(d); container.appendChild(renderDeck(d));
+    }
+    updateSelectors();
+}
+
+// --- Update selectors ---
+function updateSelectors(){
+    const from=document.getElementById('fromDeck'); const to=document.getElementById('toDeck');
+    from.innerHTML=''; to.innerHTML='';
+    decks.forEach(d=>{
+        const o1=document.createElement('option'); o1.value=d.id; o1.textContent='Deck '+d.id; from.appendChild(o1);
+        const o2=document.createElement('option'); o2.value=d.id; o2.textContent='Deck '+d.id; to.appendChild(o2);
+    });
+    if(decks.length>=2) to.selectedIndex=1;
+}
+
+// --- Deck helpers ---
+function getDeck(id){ return decks.find(d=>d.id===id); }
+function loadDeck(id,file){
+    const r = new FileReader();
+    r.onload = () => {
+        ctx.decodeAudioData(r.result, buf => {
+            const d=getDeck(id); d.buffer=buf; d.cue=0; d.playing=false; createWaveform(id,buf); updateTimeDisplay(id);
+        });
+    };
+    r.readAsArrayBuffer(file);
+}
+function playDeck(id){
+    const d=getDeck(id); if(!d||!d.buffer) return; stopDeck(id);
+    const s = ctx.createBufferSource(); s.buffer=d.buffer; s.playbackRate.value=d.speed;
+    s.connect(d.eq.bass); s.start(0,d.cue);
+    d.source=s; d.startTime=ctx.currentTime-d.cue; d.playing=true;
+    requestAnimationFrame(()=>updateProgress(id));
+}
+function stopDeck(id){
+    const d=getDeck(id); 
+    if(d&&d.source){ d.source.stop(); d.source.disconnect(); d.source=null; d.playing=false; d.cue=0; updateTimeDisplay(id);}
+}
+function setVol(id,v){ getDeck(id).gain.gain.value=v; }
+function setSpeed(id,v){ const d=getDeck(id); d.speed=v; if(d.source) d.source.playbackRate.value=v; }
+function setEQ(id,type,v){ getDeck(id).eq[type].gain.value=v; }
+function setCue(id){ const d=getDeck(id); if(d.source) d.cue=ctx.currentTime-d.startTime; }
+function gotoCue(id){ playDeck(id); }
+function triggerHotcue(id,index){
+    const d=getDeck(id);
+    if(d.hotcues[index]==0){ d.hotcues[index]=d.cue; document.querySelector(`#hotcues${id} .hotcue:nth-child(${index+1})`).classList.add('active'); }
+    else { d.cue=d.hotcues[index]; gotoCue(id); }
+}
+
+// --- Progress / Waveform ---
+function updateProgress(id){
+    const d=getDeck(id); if(!d||!d.source||!d.buffer) return;
+    const elapsed=ctx.currentTime-d.startTime;
+    const prog=Math.min(elapsed/d.buffer.duration*100,100);
+    document.getElementById('progress'+id).style.width=prog+'%';
+    const sec=Math.floor(elapsed); document.getElementById('currentTime'+id).textContent=Math.floor(sec/60)+":"+("0"+(sec%60)).slice(-2);
+    updateTimeDisplay(id);
+    if(d.playing&&prog<100) requestAnimationFrame(()=>updateProgress(id));
+}
+function updateTimeDisplay(id){
+    const d=getDeck(id); if(!d||!d.buffer) return;
+    const totalSec=Math.floor(d.buffer.duration); document.getElementById('totalTime'+id).textContent=Math.floor(totalSec/60)+":"+("0"+(totalSec%60)).slice(-2);
+}
+
+// --- Waveform ---
+function createWaveform(id,buffer){
+    const wf=document.getElementById('waveform'+id); wf.innerHTML='';
+    const data=buffer.getChannelData(0); const step=Math.floor(data.length/wf.offsetWidth);
+    for(let i=0;i<wf.offsetWidth;i++){
+        const val=Math.abs(data[i*step])*wf.offsetHeight;
+        const bar=document.createElement('div'); bar.className='waveform-bar'; bar.style.left=i+'px'; bar.style.height=val+'px';
+        bar.style.background=i%50<1?'#0ff':'#0f0'; wf.appendChild(bar);
+    }
+}
+
+// --- Init ---
+updateDeckCount(2);
+</script>
+<script>
+// --- Crossfader ---
+const fader=document.getElementById('fader');
+fader.addEventListener('pointerdown', e=>{
+    e.preventDefault();
+    const move = ev => {
+        let x = ev.clientX - fader.parentElement.getBoundingClientRect().left;
+        x = Math.max(0, Math.min(fader.parentElement.offsetWidth, x));
+        fader.style.left = x + 'px';
+        const r = x/fader.parentElement.offsetWidth;
+        if(decks[0]) decks[0].gain.gain.value = 1-r;
+        if(decks[1]) decks[1].gain.gain.value = r;
+    };
+    const up = ()=>{ window.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up);}
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+});
+
+// --- AutoMix Funktion ---
+function autoMixSelected(){
+    const from=getDeck(parseInt(document.getElementById('fromDeck').value));
+    const to=getDeck(parseInt(document.getElementById('toDeck').value));
+    if(!from||!to||from.id===to.id) return;
+    const dur=parseFloat(document.getElementById('mixDuration').value);
+    let v=0; const step=0.02; const interval=dur*1000*step;
+    to.gain.gain.value=0; if(!to.source) playDeck(to.id);
+    const i=setInterval(()=>{
+        v+=step;
+        from.gain.gain.value=Math.max(0,1-v);
+        to.gain.gain.value=Math.min(1,v);
+        if(v>=1) clearInterval(i);
+    }, interval);
+}
+
+// --- KI Automatik ---
+function applyKI(){
+    if(!autoKI) return;
+    decks.forEach(d=>{
+        if(d.playing){
+            // Sanftes Level-Matching: Ziel Gain ~0.8, max Veränderung 0.005 pro Frame
+            const target = 0.8;
+            const diff = target - d.gain.gain.value;
+            d.gain.gain.value += Math.sign(diff)*Math.min(Math.abs(diff),0.005);
+
+            // KI Log anzeigen
+            const log = document.getElementById('kiLog');
+            const line = `Deck ${d.id}: Gain ${(d.gain.gain.value*100).toFixed(0)}%`;
+            const p = document.createElement('div'); p.textContent=line;
+            log.appendChild(p);
+            if(log.childNodes.length>5) log.removeChild(log.firstChild);
+        }
+    });
+    requestAnimationFrame(applyKI);
+}
+applyKI();
+</script>
+<script>
+// --- FX / Master ---
+function dropFX(){ 
+    master.gain.value=0.7; 
+    setTimeout(()=>master.gain.value=1,500); 
+}
+function masterLimiter(){ 
+    master.gain.value=0.8; 
+    setTimeout(()=>master.gain.value=1,2000); 
+}
+
+// --- Session speichern / laden ---
+let savedSession = null;
+function saveSession(){ 
+    savedSession = decks.map(d=>({
+        id: d.id,
+        cue: d.cue,
+        speed: d.speed,
+        vol: d.gain.gain.value,
+        hotcues: d.hotcues
+    }));
+    alert('Projekt gespeichert'); 
+}
+function loadSession(){ 
+    if(!savedSession) return;
+    savedSession.forEach(s=>{
+        const d=getDeck(s.id); 
+        if(d){ 
+            d.cue = s.cue; 
+            d.speed = s.speed; 
+            d.gain.gain.value = s.vol; 
+            d.hotcues = s.hotcues; 
+        }
+    }); 
+    alert('Projekt geladen'); 
+}
+
+// --- WAV Recording ---
+let recBuffer=[];
+const recScript = ctx.createScriptProcessor(4096,2,2);
+master.connect(recScript); recScript.connect(ctx.destination);
+recScript.onaudioprocess = e=>{
+    recBuffer.push(e.inputBuffer.getChannelData(0), e.inputBuffer.getChannelData(1));
+};
+
+// Start Aufnahme
+document.getElementById('startRecBtn').onclick = ()=>{
+    recBuffer=[]; 
+    document.getElementById('startRecBtn').disabled=true; 
+    document.getElementById('stopRecBtn').disabled=false; 
+    alert('Aufnahme gestartet!');
+};
+
+// Stop Aufnahme & Download
+document.getElementById('stopRecBtn').onclick = ()=>{
+    const blob = encodeWAV(recBuffer);
+    const url = URL.createObjectURL(blob);
+    const dl = document.getElementById('downloadLink');
+    dl.href = url;
+    dl.download = 'CYBERDJ_MIX.wav';
+    dl.textContent = 'Mix herunterladen';
+    document.getElementById('startRecBtn').disabled=false;
+    document.getElementById('stopRecBtn').disabled=true;
+    alert('Aufnahme beendet');
+};
+
+// WAV Encoding
+function encodeWAV(buffers){
+    const left = mergeBuffers(buffers.filter((_,i)=>i%2===0));
+    const right = mergeBuffers(buffers.filter((_,i)=>i%2===1));
+    const interleaved = interleave(left,right);
+    const buffer = new ArrayBuffer(44 + interleaved.length*2);
+    const view = new DataView(buffer);
+
+    function writeString(v,offset,str){ for(let i=0;i<str.length;i++) v.setUint8(offset+i,str.charCodeAt(i)); }
+
+    let offset=0;
+    writeString(view, offset, 'RIFF'); offset+=4;
+    view.setUint32(offset, 36+interleaved.length*2, true); offset+=4;
+    writeString(view, offset, 'WAVE'); offset+=4;
+    writeString(view, offset, 'fmt '); offset+=4;
+    view.setUint32(offset,16,true); offset+=4;
+    view.setUint16(offset,1,true); offset+=2;
+    view.setUint16(offset,2,true); offset+=2;
+    view.setUint32(offset,44100,true); offset+=4;
+    view.setUint32(offset,44100*4,true); offset+=4;
+    view.setUint16(offset,4,true); offset+=2;
+    view.setUint16(offset,16,true); offset+=2;
+    writeString(view, offset, 'data'); offset+=4;
+    view.setUint32(offset, interleaved.length*2, true); offset+=4;
+
+    let idx = 44;
+    for(let i=0;i<interleaved.length;i++){
+        let s = Math.max(-1, Math.min(1, interleaved[i]));
+        view.setInt16(idx, s<0 ? s*0x8000 : s*0x7FFF, true); idx+=2;
+    }
+    return new Blob([view], {type:'audio/wav'});
+}
+
+// Hilfsfunktionen WAV
+function mergeBuffers(buffers){ 
+    let length=0; buffers.forEach(b=>length+=b.length);
+    const result = new Float32Array(length);
+    let offset=0;
+    buffers.forEach(b=>{ result.set(b,offset); offset+=b.length; });
+    return result;
+}
+function interleave(l,r){
+    const result = new Float32Array(l.length+r.length);
+    let index=0, li=0;
+    while(li<l.length){ result[index++]=l[li]; result[index++]=r[li]; li++; }
+    return result;
+}
+</script>
